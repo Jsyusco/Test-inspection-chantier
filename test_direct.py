@@ -1,18 +1,19 @@
 import streamlit as st
-import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 
-st.title("🧪 Test de Connexion Directe")
-
-# L'ID de votre feuille (extrait de votre URL)
-SHEET_ID = "1U7atj3w4ajsJydEBXKY8HbIKuijKu6CA3sS6FYKYsAw"
-SHEET_NAME = "Questions" # Testons d'abord cet onglet
-
-url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
+st.title("🧪 Test de Connexion via Secrets")
 
 try:
-    df = pd.read_csv(url)
-    st.success("✅ Connexion réussie !")
-    st.write("Voici les 5 premières lignes de l'onglet 'Questions' :")
+    # Tentative de connexion via le connecteur Streamlit
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    
+    # Tentative de lecture de l'onglet 'Questions'
+    df = conn.read(worksheet="Questions")
+    
+    st.success("✅ Les Secrets sont bien configurés et fonctionnels !")
     st.dataframe(df.head())
+    
 except Exception as e:
-    st.error(f"❌ Échec de la connexion directe : {e}")
+    st.error("❌ Erreur de configuration des Secrets.")
+    st.exception(e)
+    st.info("Vérifiez que votre section [connections.gsheets] est bien présente dans les Secrets.")
