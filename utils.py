@@ -14,7 +14,6 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_ALIGN_VERTICAL
-from streamlit_gsheets import GSheetsConnection
 
 # --- CONSTANTES ---
 PROJECT_RENAME_MAP = {
@@ -43,22 +42,33 @@ SECTION_PHOTO_RULES = {
 COMMENT_ID = 100
 COMMENT_QUESTION = "Veuillez préciser pourquoi le nombre de photo partagé ne correspond pas au minimum attendu"
 
-# --- CONNEXION GOOGLE SHEETS ---
-def get_db_connection():
-    return st.connection("gsheets", type=GSheetsConnection)
+# --- UTILITAIRE DE CONNEXION DIRECTE ---
+def get_sheet_url(sheet_name):
+    """Construit l'URL de téléchargement CSV à partir de l'URL des secrets."""
+    try:
+        base_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+        sheet_id = base_url.split("/d/")[1].split("/")[0]
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}"
+    except Exception as e:
+        st.error(f"Erreur configuration Secrets : {e}")
+        return None
 
 # --- CHARGEMENT DONNÉES ---
 @st.cache_data(ttl=600)
 def load_form_structure_from_sheets():
     try:
-        conn = get_db_connection()
-        # Lecture de l'onglet 'Questions'
-        df = conn.read(worksheet="Questions") 
+        url = get_sheet_url("Questions")
+        if not url: return None
+        
+        # Lecture directe via Pandas
+        df = pd.read_csv(url) 
         
         # Nettoyage des colonnes
         df.columns = df.columns.str.strip()
         
-        rename_map = {'Conditon value': 'Condition value', 'condition value': 'Condition value', 'Condition Value': 'Condition value', 'Condition': 'Condition value', 'Conditon on': 'Condition on', 'condition on': 'Condition on'}
+        rename_map = {'Conditon value': 'Condition value', 'condition value': 'Condition value', 
+                      'Condition Value': 'Condition value', 'Condition': 'Condition value', 
+                      'Conditon on': 'Condition on', 'condition on': 'Condition on'}
         actual_rename = {k: v for k, v in rename_map.items() if k in df.columns}
         df = df.rename(columns=actual_rename)
         
@@ -81,16 +91,18 @@ def load_form_structure_from_sheets():
 @st.cache_data(ttl=3600)
 def load_site_data_from_sheets():
     try:
-        conn = get_db_connection()
-        # Lecture de l'onglet 'Sites'
-        df_site = conn.read(worksheet="Sites")
+        url = get_sheet_url("Sites")
+        if not url: return None
+        
+        # Lecture directe via Pandas
+        df_site = pd.read_csv(url)
         df_site.columns = df_site.columns.str.strip()
         return df_site
     except Exception as e:
         st.error(f"Erreur chargement sites (Sheet 'Sites'): {e}")
         return None
 
-# --- LOGIQUE MÉTIER (Inchangée) ---
+# --- LOGIQUE MÉTIER ---
 def get_expected_photo_count(section_name, project_data):
     if section_name.strip() not in SECTION_PHOTO_RULES:
         return None, None 
@@ -222,7 +234,7 @@ def validate_section(df_questions, section_name, answers, collected_data, projec
 
     return len(missing) == 0, missing
 
-# --- SAUVEGARDE ET EXPORTS (Modifié pour Sheets) ---
+# --- SAUVEGARDE ET EXPORTS ---
 
 def define_custom_styles(doc):
     try: title_style = doc.styles.add_style('Report Title', WD_STYLE_TYPE.PARAGRAPH)
@@ -240,22 +252,14 @@ def define_custom_styles(doc):
     subtitle_font.color.rgb = RGBColor(0x00, 0x56, 0x47)
     subtitle_style.paragraph_format.space_after = Pt(10)
 
-    try: text_style = doc.styles.add_style('Report Text', WD_STYLE_TYPE.PARAGRAPH)
-    except: text_style = doc.styles['Report Text']
-    text_font = text_style.font
-    text_font.name, text_font.size = 'Calibri', Pt(11)
-    text_style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-
 def create_word_report(collected_data, df_struct, project_data, form_start_time):
     doc = Document()
     define_custom_styles(doc)
-    
     doc.add_paragraph('Rapport d\'Audit Chantier', style='Report Title')
 
     doc.add_paragraph('Informations du Projet', style='Report Subtitle')
     project_table = doc.add_table(rows=3, cols=2)
     project_table.style = 'Light Grid Accent 1'
-    
     project_table.rows[0].cells[0].text = 'Intitulé'
     project_table.rows[0].cells[1].text = str(project_data.get('Intitulé', 'N/A'))
     
@@ -265,25 +269,8 @@ def create_word_report(collected_data, df_struct, project_data, form_start_time)
     project_table.rows[2].cells[0].text = 'Date de fin'
     project_table.rows[2].cells[1].text = datetime.now().strftime('%d/%m/%Y %H:%M')
 
-    for row in project_table.rows:
-        for cell in row.cells:
-            for p in cell.paragraphs: p.style = 'Report Text'
-    
-    doc.add_paragraph()
-    doc.add_paragraph('Détails du Projet', style='Report Subtitle')
-    for group in DISPLAY_GROUPS:
-        for field_key in group:
-            renamed_key = PROJECT_RENAME_MAP.get(field_key, field_key)
-            value = project_data.get(field_key, 'N/A')
-            p = doc.add_paragraph(style='Report Text')
-            p.add_run(f'{renamed_key}: ').bold = True
-            p.add_run(str(value))
-    
-    doc.add_page_break()
-    
     for phase_idx, phase in enumerate(collected_data):
         doc.add_paragraph(f'Phase: {phase["phase_name"]}', style='Report Subtitle')
-        
         for q_id, answer in phase['answers'].items():
             if int(q_id) == COMMENT_ID:
                 q_text = COMMENT_QUESTION
@@ -292,7 +279,6 @@ def create_word_report(collected_data, df_struct, project_data, form_start_time)
                 q_text = q_row.iloc[0]['question'] if not q_row.empty else f"ID {q_id}"
             
             is_photo = (isinstance(answer, list) and answer and hasattr(answer[0], 'read')) or hasattr(answer, 'read')
-            
             if is_photo:
                 doc.add_paragraph(f'Q{q_id}: {q_text}', style='Report Subtitle')
                 photos = answer if isinstance(answer, list) else [answer]
@@ -300,74 +286,19 @@ def create_word_report(collected_data, df_struct, project_data, form_start_time)
                     try:
                         f_obj.seek(0)
                         doc.add_picture(BytesIO(f_obj.read()), width=Inches(5))
-                        cap = doc.add_paragraph(f'Photo {idx+1}: {f_obj.name}', style='Report Text')
-                        cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                        if cap.runs: 
-                            cap.runs[0].font.size, cap.runs[0].font.italic = Pt(9), True
                         f_obj.seek(0)
-                    except: doc.add_paragraph(f"[Erreur Photo {idx+1}]", style='Report Text')
-                doc.add_paragraph()
+                    except: doc.add_paragraph(f"[Erreur Photo {idx+1}]")
             else:
                 t = doc.add_table(rows=1, cols=2)
                 t.style = 'Light Grid Accent 1'
                 t.cell(0,0).text = f'Q{q_id}: {q_text}'
                 t.cell(0,1).text = str(answer)
-                for cell in t.rows[0].cells:
-                    cell.paragraphs[0].style = 'Report Text'
-                    cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-                t.cell(0,0).paragraphs[0].runs[0].bold = True
-                doc.add_paragraph()
-        
         if phase_idx < len(collected_data) - 1: doc.add_page_break()
     
     buf = BytesIO()
     doc.save(buf)
     buf.seek(0)
     return buf
-
-def save_form_data(collected_data, project_data, submission_id, start_time):
-    """
-    Sauvegarde une nouvelle ligne dans l'onglet 'Reponses' du Google Sheet.
-    Les données complexes sont sérialisées en JSON.
-    NOTE: Les photos ne sont PAS uploadées dans le Sheet. Seuls les noms de fichiers sont conservés.
-    """
-    try:
-        conn = get_db_connection()
-        
-        # 1. Nettoyage et conversion des données pour le JSON
-        cleaned_data = []
-        for phase in collected_data:
-            clean_phase = {"phase_name": phase["phase_name"], "answers": {}}
-            for k, v in phase["answers"].items():
-                # Transformation des objets fichiers en chaînes de caractères (noms)
-                if isinstance(v, list) and v and hasattr(v[0], 'read'): 
-                    file_names = ", ".join([f.name for f in v])
-                    clean_phase["answers"][str(k)] = f"Fichiers: {file_names}"
-                elif hasattr(v, 'read'): 
-                     clean_phase["answers"][str(k)] = f"Fichier: {v.name}"
-                else:
-                    clean_phase["answers"][str(k)] = v
-            cleaned_data.append(clean_phase)
-        
-        json_dump = json.dumps(cleaned_data, ensure_ascii=False)
-        
-        # 2. Création de la ligne à insérer
-        new_row = pd.DataFrame([{
-            "ID": submission_id,
-            "Date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            "Projet": project_data.get('Intitulé', 'N/A'),
-            "Donnees_JSON": json_dump
-        }])
-        
-        # 3. Ajout à la feuille existante
-        # Note : st-gsheets lit tout, ajoute, et réécrit.
-        existing_data = conn.read(worksheet="Reponses")
-        updated_df = pd.concat([existing_data, new_row], ignore_index=True)
-        conn.update(worksheet="Reponses", data=updated_df)
-        
-        return True, submission_id 
-    except Exception as e:
-        return False, str(e)
 
 def create_csv_export(collected_data, df_struct, project_name, submission_id, start_time):
     data_for_df = []
@@ -392,7 +323,7 @@ def create_zip_export(collected_data):
     buf.seek(0)
     return buf
 
-# --- COMPOSANT UI (Inchangé) ---
+# --- COMPOSANT UI ---
 def render_question(row, answers, phase_name, key_suffix, loop_index, project_data):
     q_id = int(row.get('id', 0))
     is_dynamic_comment = (q_id == COMMENT_ID)
@@ -426,3 +357,6 @@ def render_question(row, answers, phase_name, key_suffix, loop_index, project_da
         if exp: st.info(f"📸 **Attendu : {exp}** ({det})")
         answers[q_id] = st.file_uploader("I", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key=widget_key, label_visibility="collapsed")
     st.markdown('</div>', unsafe_allow_html=True)
+
+# Note: La fonction save_form_data a été retirée car elle nécessite 
+# une authentification Write (Service Account) que vous ne souhaitez pas utiliser.
