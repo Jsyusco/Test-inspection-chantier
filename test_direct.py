@@ -4,7 +4,7 @@ import pandas as pd
 st.title("🧪 Test de Connexion Directe")
 
 # L'ID de votre feuille (extrait de votre URL)
-SHEET_ID = "1D-LInL839f997L7V_S394749_O3-4-8"
+SHEET_ID = "1U7atj3w4ajsJydEBXKY8HbIKuijKu6CA3sS6FYKYsAw"
 SHEET_NAME = "Questions" # Testons d'abord cet onglet
 
 url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
