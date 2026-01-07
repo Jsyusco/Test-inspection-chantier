@@ -14,7 +14,7 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_ALIGN_VERTICAL
-[cite_start]from streamlit_gsheets import GSheetsConnection # [cite: 1]
+from streamlit_gsheets import GSheetsConnection
 
 # --- CONSTANTES ---
 PROJECT_RENAME_MAP = {
