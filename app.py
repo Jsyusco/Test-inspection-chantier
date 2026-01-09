@@ -1,33 +1,19 @@
 import streamlit as st
-import sys
+import streamlit_firebase_auth as auth
 
-st.set_page_config(page_title="Test Installation")
+st.title("🔍 Test Import Firebase Auth")
 
-st.title("🔍 Diagnostic d'installation")
-
-st.write("Version Python :", sys.version)
-
-# Test de l'importation
 try:
-    import streamlit_firebase_auth
-    from streamlit_firebase_auth import firebase_auth
+    # On vérifie ce que contient réellement le package
+    st.write("Contenu du module :", dir(auth))
     
-    st.success("✅ SUCCÈS : La bibliothèque `streamlit-firebase-auth` est bien installée et importée !")
-    st.balloons()
-    
-    st.info("""
-    **Prochaine étape :**
-    Puisque cela fonctionne ici, vous pouvez remettre votre code complet. 
-    Assurez-vous juste de garder la ligne 'streamlit-firebase-auth' dans votre requirements.txt.
-    """)
+    # Tentative avec le nom de fonction alternatif souvent utilisé dans ce package
+    if hasattr(auth, 'firebase_auth'):
+        st.success("✅ La fonction 'firebase_auth' existe !")
+    elif hasattr(auth, 'streamlit_firebase_auth'):
+        st.info("ℹ️ La fonction s'appelle en fait 'streamlit_firebase_auth'")
+    else:
+        st.warning("⚠️ Aucune des fonctions connues n'est présente.")
 
-except ImportError as e:
-    st.error("❌ ÉCHEC : La bibliothèque est introuvable.")
-    st.code(f"Erreur détaillée : {e}")
-    
-    st.warning("""
-    **Causes possibles :**
-    1. Le fichier s'appelle 'Requirements.txt' (avec majuscule) ou 'requirements.txt.txt'.
-    2. Le fichier n'est pas à la racine du dépôt GitHub (pas dans un dossier).
-    3. Streamlit Cloud n'a pas redémarré (Tentez 'Reboot App').
-    """)
+except Exception as e:
+    st.error(f"Erreur : {e}")
