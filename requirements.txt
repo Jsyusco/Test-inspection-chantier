@@ -1,2 +1,2 @@
 streamlit
-streamlit-firebase-auth
+streamlit-firebase-auth==0.1.0
